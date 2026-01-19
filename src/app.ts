@@ -8,6 +8,7 @@ import restaurantRoutes from './routes/restaurantRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import managerRoutes from './routes/managerRoutes.js';
+import allergenRoutes from './routes/allergenRoutes.js';
 
 const app: Application = express();
 
@@ -36,6 +37,7 @@ app.use('/api/restaurants', restaurantRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/manager', managerRoutes);
+app.use('/api/allergens', allergenRoutes);
 
 /**
  * Centralized Error Handling
