@@ -1,0 +1,401 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               Int                  @id @default(autoincrement()) @map("id_usuario")
+  fullName         String               @map("nome_completo") @db.VarChar(150)
+  email            String               @unique @db.VarChar(150)
+  phone            String               @map("telefone") @db.VarChar(20)
+  passwordHash     String               @map("senha_hash") @db.VarChar(255)
+  createdAt        DateTime             @default(now()) @map("criado_em")
+  updatedAt        DateTime?            @map("atualizado_em")
+  active           Boolean              @default(true) @map("ativo")
+
+  roles            UserRole[]
+  createdSessions  Session[]            @relation("CreatedSessions")
+  reservations     Reservation[]
+  ordersAsClient   Order[]              @relation("ClientOrders")
+  ordersAsWaiter   Order[]              @relation("WaiterOrders")
+  paymentDivisions PaymentDivision[]
+  restaurantStaff  RestaurantEmployee[]
+  statusHistory    OrderStatusHistory[]
+
+  @@map("usuarios")
+}
+
+model Role {
+  id          Int        @id @default(autoincrement()) @map("id_papel")
+  name        String     @unique @map("nome") @db.VarChar(50)
+  description String?    @map("descricao") @db.VarChar(255)
+
+  userRoles   UserRole[]
+
+  @@map("papeis")
+}
+
+model UserRole {
+  id           Int         @id @default(autoincrement()) @map("id_usuario_papel")
+  userId       Int         @map("id_usuario")
+  roleId       Int         @map("id_papel")
+  restaurantId Int?        @map("id_restaurante")
+
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  restaurant   Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, restaurantId], name: "uk_usuario_papel_restaurante")
+  @@map("usuarios_papeis")
+}
+
+model Restaurant {
+  id               Int                       @id @default(autoincrement()) @map("id_restaurante")
+  tradeName        String                    @map("nome_fantasia") @db.VarChar(150)
+  companyName      String?                   @map("razao_social") @db.VarChar(150)
+  cnpj             String?                   @unique @db.VarChar(20)
+  description      String?                   @map("descricao") @db.Text
+  mainCategory     String?                   @map("categoria_principal") @db.VarChar(50)
+  street           String?                   @map("logradouro") @db.VarChar(200)
+  number           String?                   @map("numero") @db.VarChar(10)
+  neighborhood     String?                   @map("bairro") @db.VarChar(100)
+  city             String?                   @map("cidade") @db.VarChar(100)
+  state            String?                   @map("estado") @db.VarChar(2)
+  zipCode          String?                   @map("cep") @db.VarChar(10)
+  latitude         Decimal?                  @db.Decimal(9, 6)
+  longitude        Decimal?                  @db.Decimal(11, 6)
+  highlightLevel   String?                   @default("nenhum") @map("destaque_nivel") @db.VarChar(20)
+  createdAt        DateTime                  @default(now()) @map("criado_em")
+  updatedAt        DateTime?                 @map("atualizado_em")
+  active           Boolean                   @default(true) @map("ativo")
+
+  paymentConfig    RestaurantPaymentConfig?
+  tables           Table[]
+  sessions         Session[]
+  menuItems        MenuItem[]
+  combos           Combo[]
+  reservations     Reservation[]
+  userRoles        UserRole[]
+  employees        RestaurantEmployee[]
+
+  @@map("restaurantes")
+}
+
+model RestaurantPaymentConfig {
+  restaurantId                Int      @id @map("id_restaurante")
+  allowsPayBefore             Boolean  @default(false) @map("permite_pagar_antes")
+  allowsPayAfter              Boolean  @default(true) @map("permite_pagar_depois")
+  allowsBoth                  Boolean  @default(false) @map("permite_ambos")
+  paidTableReservation        Boolean  @default(false) @map("reserva_mesa_paga")
+  freeTableReservation        Boolean  @default(true) @map("reserva_mesa_gratis")
+  cancellationDeadlineHours   Int      @default(2) @map("prazo_cancelamento_reserva_horas")
+  sessionDivisionDeadlineMin  Int      @default(15) @map("prazo_divisao_sessao_minutos")
+  serviceFeePercent           Decimal? @map("taxa_servico_percentual") @db.Decimal(5, 2)
+  platformFeePercent          Decimal  @default(1.00) @map("taxa_plataforma_percentual") @db.Decimal(5, 2)
+
+  restaurant                  Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@map("restaurantes_config_pagamento")
+}
+
+model Table {
+  id             Int          @id @default(autoincrement()) @map("id_mesa")
+  restaurantId   Int          @map("id_restaurante")
+  identifier     String       @map("identificador_mesa") @db.VarChar(20)
+  capacity       Int?         @map("capacidade")
+  active         Boolean      @default(true) @map("ativa")
+
+  restaurant     Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  sessions       Session[]
+  reservations   Reservation[]
+
+  @@unique([restaurantId, identifier], name: "uk_mesa_restaurante")
+  @@map("mesas")
+}
+
+model Session {
+  id              Int          @id @default(autoincrement()) @map("id_sessao")
+  restaurantId    Int          @map("id_restaurante")
+  tableId         Int?         @map("id_mesa")
+  creatorUserId   Int          @map("id_usuario_criador")
+  origin          String       @db.VarChar(20)
+  status          String       @db.VarChar(20)
+  expectedStart   DateTime?    @map("inicio_previsto")
+  effectiveStart  DateTime?    @map("inicio_efetivo")
+  effectiveEnd    DateTime?    @map("fim_efetivo")
+  createdAt       DateTime     @default(now()) @map("criado_em")
+
+  restaurant      Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  table           Table?       @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  creator         User         @relation("CreatedSessions", fields: [creatorUserId], references: [id], onDelete: Cascade)
+  orders          Order[] 
+  payments        Payment[]
+
+  @@map("sessoes")
+}
+
+model Allergen {
+  id          Int                   @id @default(autoincrement()) @map("id_alergeno")
+  name        String                @unique @map("nome") @db.VarChar(100)
+  description String?               @map("descricao") @db.VarChar(255)
+
+  ingredients IngredientAllergen[]
+
+  @@map("alergenos")
+}
+
+model Ingredient {
+  id          Int                   @id @default(autoincrement()) @map("id_ingrediente")
+  name        String                @map("nome") @db.VarChar(150)
+  price       Decimal?              @map("preco") @db.Decimal(10, 2)
+  description String?               @map("descricao") @db.VarChar(255)
+
+  allergens   IngredientAllergen[]
+  menuItems   MenuItemIngredient[]
+
+  @@map("ingredientes")
+}
+
+model IngredientAllergen {
+  ingredientId Int @map("id_ingrediente")
+  allergenId   Int @map("id_alergeno")
+
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  allergen     Allergen   @relation(fields: [allergenId], references: [id], onDelete: Cascade)
+
+  @@id([ingredientId, allergenId])
+  @@map("ingredientes_alergenos")
+}
+
+model MenuItem {
+  id           Int                   @id @default(autoincrement()) @map("id_item")
+  restaurantId Int                   @map("id_restaurante")
+  name         String                @map("nome") @db.VarChar(150)
+  description  String?               @map("descricao") @db.Text
+  price        Decimal               @map("preco") @db.Decimal(10, 2)
+  active       Boolean               @default(true) @map("ativo")
+
+  restaurant   Restaurant            @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  ingredients  MenuItemIngredient[]
+  comboItems   ComboItem[]
+  reservationItems ReservationItem[]
+  orderItems   OrderItem[]
+
+  @@map("cardapio_itens")
+}
+
+model MenuItemIngredient {
+  id           Int        @id @default(autoincrement()) @map("id_item_ingrediente")
+  menuItemId   Int        @map("id_item")
+  ingredientId Int        @map("id_ingrediente")
+  quantity     String?    @map("quantidade") @db.VarChar(50)
+  notes        String?    @map("observacoes") @db.VarChar(255)
+
+  menuItem     MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@map("cardapio_itens_ingredientes")
+}
+
+model Combo {
+  id           Int         @id @default(autoincrement()) @map("id_combo")
+  restaurantId Int         @map("id_restaurante")
+  name         String      @map("nome") @db.VarChar(150)
+  description  String?     @map("descricao") @db.Text
+  totalPrice   Decimal     @map("preco_total") @db.Decimal(10, 2)
+  active       Boolean     @default(true) @map("ativo")
+
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  items        ComboItem[]
+
+  @@map("combos")
+}
+
+model ComboItem {
+  id        Int      @id @default(autoincrement()) @map("id_combo_item")
+  comboId   Int      @map("id_combo")
+  menuItemId Int      @map("id_item")
+  quantity  Int      @default(1) @map("quantidade")
+
+  combo     Combo    @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  menuItem  MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@map("combos_itens")
+}
+
+model Reservation {
+  id                   Int               @id @default(autoincrement()) @map("id_reserva")
+  restaurantId         Int               @map("id_restaurante")
+  tableId              Int?              @map("id_mesa")
+  userId               Int               @map("id_usuario")
+  type                 String            @db.VarChar(20)
+  reservationDateTime  DateTime          @map("data_hora_reserva")
+  cancellationDeadline DateTime          @map("data_hora_limite_cancelamento")
+  status               String            @db.VarChar(20)
+  paidInAdvance        Boolean           @default(false) @map("paga_antecipadamente")
+  expectedTotalValue   Decimal           @default(0.00) @map("valor_total_previsto") @db.Decimal(10, 2)
+  paidValue            Decimal           @default(0.00) @map("valor_pago") @db.Decimal(10, 2)
+
+  restaurant           Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  table                Table?            @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  user                 User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items                ReservationItem[]
+  payments             Payment[]
+
+  @@map("reservas")
+}
+
+model ReservationItem {
+  id            Int         @id @default(autoincrement()) @map("id_reserva_item")
+  reservationId Int         @map("id_reserva")
+  menuItemId    Int         @map("id_item")
+  quantity      Int         @map("quantidade")
+  notes         String?     @map("observacoes") @db.VarChar(255)
+  unitValue     Decimal     @map("valor_unitario") @db.Decimal(10, 2)
+  totalValue    Decimal     @map("valor_total") @db.Decimal(10, 2)
+
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  menuItem      MenuItem    @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@map("reservas_itens")
+}
+
+model Order {
+  id              Int                  @id @default(autoincrement()) @map("id_pedido")
+  sessionId       Int                  @map("id_sessao")
+  clientUserId    Int?                 @map("id_usuario_cliente")
+  waiterUserId    Int?                 @map("id_usuario_garcom")
+  status          String               @db.VarChar(20)
+  createdAt       DateTime             @default(now()) @map("criado_em")
+  updatedAt       DateTime?            @map("atualizado_em")
+
+  session         Session              @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  client          User?                @relation("ClientOrders", fields: [clientUserId], references: [id], onDelete: SetNull)
+  waiter          User?                @relation("WaiterOrders", fields: [waiterUserId], references: [id], onDelete: SetNull)
+  items           OrderItem[]
+  statusHistory   OrderStatusHistory[]
+
+  @@map("pedidos")
+}
+
+model OrderItem {
+  id          Int            @id @default(autoincrement()) @map("id_pedido_item")
+  orderId     Int            @map("id_pedido")
+  menuItemId  Int            @map("id_item")
+  quantity    Int            @map("quantidade")
+  notes       String?        @map("observacoes") @db.VarChar(255)
+  unitValue   Decimal        @map("valor_unitario") @db.Decimal(10, 2)
+  totalValue  Decimal        @map("valor_total") @db.Decimal(10, 2)
+
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem    MenuItem       @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  kitchenQueue KitchenQueue[]
+
+  @@map("pedidos_itens")
+}
+
+model OrderStatusHistory {
+  id              Int      @id @default(autoincrement()) @map("id_status")
+  orderId         Int      @map("id_pedido")
+  previousStatus  String   @map("status_anterior") @db.VarChar(20)
+  newStatus       String   @map("status_novo") @db.VarChar(20)
+  dateTime        DateTime @default(now()) @map("data_hora")
+  responsibleUserId Int?   @map("id_usuario_responsavel")
+
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  responsible     User?    @relation(fields: [responsibleUserId], references: [id], onDelete: SetNull)
+
+  @@map("pedidos_status_historico")
+}
+
+model KitchenQueue {
+  id           Int       @id @default(autoincrement()) @map("id_fila")
+  orderItemId  Int       @map("id_pedido_item")
+  sector       String    @db.VarChar(20)
+  status       String    @db.VarChar(20)
+  createdAt    DateTime  @default(now()) @map("criado_em")
+  updatedAt    DateTime? @map("atualizado_em")
+
+  orderItem    OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@map("cozinha_filas")
+}
+
+model Payment {
+  id                    Int               @id @default(autoincrement()) @map("id_pagamento")
+  sessionId             Int?              @map("id_sessao")
+  reservationId         Int?              @map("id_reserva")
+  origin                String            @db.VarChar(20)
+  totalValue            Decimal           @map("valor_total") @db.Decimal(10, 2)
+  status                String            @db.VarChar(20)
+  method                String            @db.VarChar(20)
+  stripePaymentIntentId String?           @unique @map("stripe_payment_intent_id") @db.VarChar(100)
+  stripeSessionId       String?           @map("stripe_session_id") @db.VarChar(100)
+  createdAt             DateTime          @default(now()) @map("criado_em")
+  updatedAt             DateTime?         @map("atualizado_em")
+
+  session               Session?          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  reservation           Reservation?      @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  divisions             PaymentDivision[]
+  methods               PaymentMethod[]
+  transactionFees       TransactionFee[]
+
+  @@map("pagamentos")
+}
+
+model PaymentDivision {
+  id            Int      @id @default(autoincrement()) @map("id_divisao")
+  paymentId     Int      @map("id_pagamento")
+  payerUserId   Int      @map("id_usuario_pagador")
+  value         Decimal  @map("valor") @db.Decimal(10, 2)
+  percentage    Decimal? @map("percentual") @db.Decimal(5, 2)
+  status        String   @default("PENDENTE") @db.VarChar(20)
+  createdAt     DateTime @default(now()) @map("criado_em")
+
+  payment       Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  payer         User     @relation(fields: [payerUserId], references: [id], onDelete: Cascade)
+
+  @@map("pagamentos_divisoes")
+}
+
+model PaymentMethod {
+  id             Int     @id @default(autoincrement()) @map("id_pagamento_forma")
+  paymentId      Int     @map("id_pagamento")
+  type           String  @db.VarChar(20)
+  value          Decimal @map("valor") @db.Decimal(10, 2)
+  stripeChargeId String? @map("stripe_charge_id") @db.VarChar(100)
+
+  payment        Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@map("pagamentos_formas")
+}
+
+model TransactionFee {
+  id                 Int     @id @default(autoincrement()) @map("id_taxa")
+  paymentId          Int     @map("id_pagamento")
+  apiGatewayValue    Decimal @default(0.00) @map("valor_api_gateway") @db.Decimal(10, 2)
+  platformValue      Decimal @default(0.00) @map("valor_plataforma") @db.Decimal(10, 2)
+  platformPercentage Decimal @default(1.00) @map("percentual_plataforma") @db.Decimal(5, 2)
+
+  payment            Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@map("taxas_transacao")
+}
+
+model RestaurantEmployee {
+  id           Int        @id @default(autoincrement()) @map("id_funcionario")
+  userId       Int        @map("id_usuario")
+  restaurantId Int        @map("id_restaurante")
+  role         String     @map("funcao") @db.VarChar(20)
+  active       Boolean    @default(true) @map("ativo")
+
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, restaurantId], name: "uk_usuario_restaurante")
+  @@map("funcionarios_restaurante")
+}
